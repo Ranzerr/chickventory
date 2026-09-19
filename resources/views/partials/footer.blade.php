@@ -1,0 +1,1 @@
+<footer class="footer"><span>© {{ date('Y') }} Chicky Fryday Inventory Management System</span><span>Database: {{ strtoupper(config('database.default')) }} <b>●</b></span></footer>
