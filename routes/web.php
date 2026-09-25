@@ -28,6 +28,7 @@ Route::middleware('auth')->group(function () {
 
     // Products / ingredients — any authenticated user can add; only admins can edit/delete.
     Route::get('products', [ProductController::class, 'index'])->name('products');
+    Route::get('products/{product}/image', [ProductController::class, 'image'])->name('products.image');
     Route::post('products', [ProductController::class, 'store'])->name('products.store');
     Route::post('ingredients', [IngredientController::class, 'store'])->name('ingredients.store');
 

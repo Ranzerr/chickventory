@@ -8,6 +8,7 @@ use App\Models\Supplier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class ProductController extends Controller
 {
@@ -15,7 +16,7 @@ class ProductController extends Controller
     {
         $search = $request->string('search');
 
-        $productsQuery = Product::with(['supplier', 'recipeMaterials'])->where('status', 'active')
+        $productsQuery = Product::with(['supplier', 'recipeMaterials'])->whereIn('status', ['active', 'available'])
             ->when($request->filled('search'), fn ($query) => $query->where(function ($query) use ($search) {
                 $query->where('name', 'like', '%'.$search.'%')
                     ->orWhere('product_code', 'like', '%'.$search.'%');
@@ -58,6 +59,8 @@ class ProductController extends Controller
         $validated = $request->validate([
             'product_code' => ['required', 'string', 'max:50', 'unique:products,product_code'],
             'name' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'numeric', 'min:0', 'max:99999999.99'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'category' => ['required', 'string', 'max:100'],
             'supplier_id' => ['nullable', 'exists:suppliers,id'],
             'current_stock' => ['nullable', 'numeric', 'min:0'],
@@ -65,9 +68,14 @@ class ProductController extends Controller
             'unit' => ['required', 'string', 'max:30'],
         ]);
 
+        $image = $request->file('image');
+
         Product::create([
             'product_code' => $validated['product_code'],
             'name' => $validated['name'],
+            'price' => $validated['price'],
+            'image' => $image?->getContent(),
+            'image_mime_type' => $image?->getMimeType(),
             'category' => $validated['category'],
             'supplier_id' => $validated['supplier_id'] ?? null,
             'current_stock' => $validated['current_stock'] ?? 0,
@@ -85,8 +93,10 @@ class ProductController extends Controller
     public function update(Request $request, Product $product): RedirectResponse
     {
         $validated = $request->validate([
-            'product_code' => ['required', 'string', 'max:50', 'unique:products,product_code,'.$product->id],
+            'product_code' => ['required', 'string', 'max:50', 'unique:products,product_code,'.$product->getKey()],
             'name' => ['required', 'string', 'max:255'],
+            'price' => ['required', 'numeric', 'min:0', 'max:99999999.99'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'category' => ['required', 'string', 'max:100'],
             'supplier_id' => ['nullable', 'exists:suppliers,id'],
             'current_stock' => ['nullable', 'numeric', 'min:0'],
@@ -94,12 +104,29 @@ class ProductController extends Controller
             'unit' => ['required', 'string', 'max:30'],
         ]);
 
+        unset($validated['image']);
+
+        if ($request->hasFile('image')) {
+            $image = $request->file('image');
+            $validated['image'] = $image->getContent();
+            $validated['image_mime_type'] = $image->getMimeType();
+        }
+
         $product->update($validated);
 
         cache()->forget('dashboard.metrics.v3');
         cache()->forget('shared.low_stock_count.v1');
 
         return redirect()->route('products', ['tab' => 'products'])->with('success', 'Product updated successfully.');
+    }
+
+    public function image(Product $product): Response
+    {
+        abort_unless($product->image && $product->image_mime_type, 404);
+
+        return response($product->image)
+            ->header('Content-Type', $product->image_mime_type)
+            ->header('Cache-Control', 'public, max-age=86400');
     }
 
     public function destroy(Product $product): RedirectResponse

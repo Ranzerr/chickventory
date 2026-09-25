@@ -67,8 +67,10 @@
                     <table>
                         <thead>
                             <tr>
+                                <th>Image</th>
                                 <th>Product Code</th>
                                 <th>Product Name</th>
+                                <th>Price</th>
                                 <th>Category</th>
                                 <th>Unit</th>
                                 <th>Available Stock</th>
@@ -82,8 +84,16 @@
                         <tbody>
                             @forelse($products as $product)
                                 <tr>
+                                    <td>
+                                        @if($product->image)
+                                            <img src="{{ route('products.image', $product) }}" alt="{{ $product->name }}" style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px;">
+                                        @else
+                                            <span style="color: var(--muted);">No image</span>
+                                        @endif
+                                    </td>
                                     <td><strong>{{ $product->product_code }}</strong></td>
                                     <td>{{ $product->name }}</td>
+                                    <td>{{ $product->price !== null ? number_format((float) $product->price, 2) : 'N/A' }}</td>
                                     <td>{{ $product->category }}</td>
                                     <td>{{ $product->unit }}</td>
                                     <td>
@@ -133,7 +143,7 @@
                                     @if($isAdmin)
                                         <td>
                                             <div class="page-actions">
-                                                <button class="outline-btn" type="button" data-modal-open="edit-product-modal-{{ $product->id }}" style="font-size: 11px; padding: 4px 10px;">Edit</button>
+                                                <button class="outline-btn" type="button" data-modal-open="edit-product-modal-{{ $product->getKey() }}" style="font-size: 11px; padding: 4px 10px;">Edit</button>
                                                 <form method="POST" action="{{ route('products.destroy', $product) }}" onsubmit="return confirm('Delete {{ $product->name }}?');">
                                                     @csrf
                                                     @method('DELETE')
@@ -145,7 +155,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="{{ $isAdmin ? 8 : 7 }}">No products found. Click "+ Add Product" to create your first menu item.</td>
+                                    <td colspan="{{ $isAdmin ? 9 : 8 }}">No products found. Click "+ Add Product" to create your first menu item.</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -244,7 +254,7 @@
                 </div>
                 <button class="modal-close" type="button" data-modal-close aria-label="Close">×</button>
             </div>
-            <form method="POST" action="{{ route('products.store') }}">
+            <form method="POST" action="{{ route('products.store') }}" enctype="multipart/form-data">
                 @csrf
                 <div class="form-grid">
                     <label>Product Code
@@ -252,6 +262,12 @@
                     </label>
                     <label>Product Name
                         <input name="name" placeholder="e.g. 1-pc Fried Chicken with Rice" value="{{ old('name') }}" required>
+                    </label>
+                    <label>Price
+                        <input name="price" type="number" min="0" max="99999999.99" step="0.01" value="{{ old('price') }}" required>
+                    </label>
+                    <label>Product Image
+                        <input name="image" type="file" accept="image/jpeg,image/png,image/webp">
                     </label>
                     <label>Category
                         <input name="category" placeholder="e.g. Meals, Combos, Beverages" list="category-suggestions" value="{{ old('category') }}" required>
@@ -340,22 +356,24 @@
     @if($isAdmin)
         {{-- Edit modals: Finished Products --}}
         @foreach($products as $product)
-            <div class="modal" id="edit-product-modal-{{ $product->id }}" data-modal hidden>
+            <div class="modal" id="edit-product-modal-{{ $product->getKey() }}" data-modal hidden>
                 <div class="modal-backdrop" data-modal-close></div>
-                <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-product-modal-title-{{ $product->id }}">
+                <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-product-modal-title-{{ $product->getKey() }}">
                     <div class="modal-header">
                         <div>
                             <p class="eyebrow">Menu & Inventory</p>
-                            <h2 id="edit-product-modal-title-{{ $product->id }}">Edit {{ $product->name }}</h2>
+                            <h2 id="edit-product-modal-title-{{ $product->getKey() }}">Edit {{ $product->name }}</h2>
                         </div>
                         <button class="modal-close" type="button" data-modal-close aria-label="Close">×</button>
                     </div>
-                    <form method="POST" action="{{ route('products.update', $product) }}">
+                    <form method="POST" action="{{ route('products.update', $product) }}" enctype="multipart/form-data">
                         @csrf
                         @method('PUT')
                         <div class="form-grid">
                             <label>Product Code<input name="product_code" value="{{ $product->product_code }}" required></label>
                             <label>Product Name<input name="name" value="{{ $product->name }}" required></label>
+                            <label>Price<input name="price" type="number" min="0" max="99999999.99" step="0.01" value="{{ $product->price }}" required></label>
+                            <label>Replace Product Image<input name="image" type="file" accept="image/jpeg,image/png,image/webp"></label>
                             <label>Category<input name="category" value="{{ $product->category }}" required></label>
                             <label>Unit
                                 <select name="unit" required>

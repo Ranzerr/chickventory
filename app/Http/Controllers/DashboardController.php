@@ -14,7 +14,7 @@ class DashboardController extends Controller
     public function index(): View
     {
         $metrics = Cache::remember('dashboard.metrics.v4', now()->addSeconds(15), fn () => [
-            'productCount' => Product::where('status', 'active')->count(),
+            'productCount' => Product::whereIn('status', ['active', 'available'])->count(),
             'totalStock' => RawMaterial::where('status', 'active')->sum('current_stock'),
             'lowStockCount' => RawMaterial::whereColumn('current_stock', '<', 'minimum_stock')->where('status', 'active')->count(),
             'supplierCount' => Supplier::where('status', 'active')->count(),

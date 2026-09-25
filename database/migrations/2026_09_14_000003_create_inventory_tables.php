@@ -22,6 +22,7 @@ return new class extends Migration
             $table->id();
             $table->string('product_code')->unique();
             $table->string('name');
+            $table->decimal('price', 10, 2)->nullable();
             $table->string('category')->default('Ingredients');
             $table->foreignId('supplier_id')->nullable()->constrained()->nullOnDelete();
             $table->decimal('current_stock', 12, 2)->default(0);

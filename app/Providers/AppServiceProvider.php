@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use App\Models\Product;
+use App\Models\RawMaterial;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -38,8 +38,7 @@ class AppServiceProvider extends ServiceProvider
                     ];
                 });
 
-            $lowStockCount = Cache::remember('shared.low_stock_count.v1', now()->addMinutes(10), fn () =>
-                Product::whereColumn('current_stock', '<', 'minimum_stock')->where('status', 'active')->count()
+            $lowStockCount = Cache::remember('shared.low_stock_count.v1', now()->addMinutes(10), fn () => RawMaterial::whereColumn('current_stock', '<', 'minimum_stock')->where('status', 'active')->count()
             );
 
             $view->with([

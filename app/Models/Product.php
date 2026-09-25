@@ -3,20 +3,22 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['product_code', 'name', 'category', 'supplier_id', 'current_stock', 'minimum_stock', 'unit', 'status'];
+    protected $primaryKey = 'product_id';
+
+    protected $fillable = ['product_code', 'name', 'price', 'image', 'image_mime_type', 'category', 'supplier_id', 'current_stock', 'minimum_stock', 'unit', 'status'];
 
     protected function casts(): array
     {
-        return ['current_stock' => 'decimal:2', 'minimum_stock' => 'decimal:2'];
+        return ['price' => 'decimal:2', 'current_stock' => 'decimal:2', 'minimum_stock' => 'decimal:2'];
     }
 
     public function supplier(): BelongsTo

@@ -12,7 +12,7 @@
         <form method="POST" action="{{ route('sales.store') }}">@csrf
             <div class="form-grid">
                 <label>External order ID<input name="external_order_id" placeholder="POS-1001" required></label>
-                <label>Product<select name="product_id" required>@foreach ($products as $product)<option value="{{ $product->id }}">{{ $product->name }}</option>@endforeach</select></label>
+                <label>Product<select name="product_id" required>@foreach ($products as $product)<option value="{{ $product->getKey() }}">{{ $product->name }}</option>@endforeach</select></label>
                 <label>Quantity<input type="number" name="quantity" min="1" value="1" required></label>
                 <label>Order date<input type="datetime-local" name="order_date" value="{{ now()->format('Y-m-d\\TH:i') }}" required></label>
                 <label>Source system<select name="source_system"><option value="manual">Manual</option><option value="POS">POS</option></select></label>

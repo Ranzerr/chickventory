@@ -122,7 +122,7 @@ class StockInController extends Controller
 
             InventoryTransaction::create([
                 'transaction_code' => 'TXN-'.str()->upper(str()->random(8)),
-                'product_id' => $product->id,
+                'product_id' => $product->getKey(),
                 'reference' => 'PO-'.str()->upper(str()->random(5)),
                 'type' => 'stock_in',
                 'quantity' => $validated['quantity'],

@@ -20,7 +20,9 @@ INSERT INTO `migrations` (`migration`, `batch`) VALUES
     ('0001_01_01_000002_create_jobs_table', 1),
     ('2026_09_14_000003_create_inventory_tables', 1),
     ('2026_09_14_000004_add_role_to_users_table', 1),
-    ('2026_09_14_000005_create_procurement_and_recipe_tables', 1)
+    ('2026_09_14_000005_create_procurement_and_recipe_tables', 1),
+    ('2026_09_25_032613_add_image_path_to_products_table', 1),
+    ('2026_09_25_070224_add_price_to_products_table', 1)
 ON DUPLICATE KEY UPDATE `batch` = VALUES(`batch`);
 
 CREATE TABLE IF NOT EXISTS `users` (
@@ -67,6 +69,9 @@ CREATE TABLE IF NOT EXISTS `products` (
     `id` bigint unsigned NOT NULL AUTO_INCREMENT,
     `product_code` varchar(255) NOT NULL,
     `name` varchar(255) NOT NULL,
+    `price` decimal(10,2) DEFAULT NULL,
+    `image` mediumblob,
+    `image_mime_type` varchar(100) DEFAULT NULL,
     `category` varchar(255) NOT NULL DEFAULT 'Ingredients',
     `supplier_id` bigint unsigned DEFAULT NULL,
     `current_stock` decimal(12,2) NOT NULL DEFAULT 0.00,
