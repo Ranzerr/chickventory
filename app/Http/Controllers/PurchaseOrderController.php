@@ -16,11 +16,19 @@ class PurchaseOrderController extends Controller
     {
         return view('purchase-orders', [
             'title' => 'Purchase Orders',
-            'purchaseOrders' => PurchaseOrder::with(['supplier', 'items.material'])
+            'purchaseOrders' => PurchaseOrder::with(['supplier:id,name', 'items.material:id,name,unit'])
                 ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
-                ->latest('order_date')->limit(50)->get(),
-            'suppliers' => Supplier::where('status', 'active')->where('requires_po', true)->orderBy('name')->get(),
-            'materials' => RawMaterial::where('status', 'active')->orderBy('name')->get(),
+                ->latest('order_date')
+                ->paginate(15),
+            'suppliers' => Supplier::select(['id', 'name'])
+                ->where('status', 'active')
+                ->where('requires_po', true)
+                ->orderBy('name')
+                ->get(),
+            'materials' => RawMaterial::select(['id', 'name', 'unit'])
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 
@@ -43,23 +51,29 @@ class PurchaseOrderController extends Controller
 
         DB::transaction(function () use ($validated): void {
             $po = PurchaseOrder::create([
-                                'created_by' => auth()->id(),
+                'created_by' => auth()->id(),
                 'po_number' => 'PO-'.now()->format('YmdHis').'-'.str()->upper(str()->random(4)),
                 'supplier_id' => $validated['supplier_id'],
                 'order_date' => $validated['order_date'],
                 'status' => 'draft',
             ]);
+
+            $items = [];
             foreach ($validated['material_id'] as $index => $materialId) {
-                $po->items()->create([
+                $items[] = [
                     'material_id' => $materialId,
                     'quantity_ordered' => $validated['quantity_ordered'][$index],
                     'unit_price' => $validated['unit_price'][$index],
-                ]);
+                ];
             }
+
+            // Batch creation in a single query
+            $po->items()->createMany($items);
         });
 
         return to_route('purchase-orders')->with('success', 'Purchase order created.');
     }
+
     public function approve(PurchaseOrder $purchaseOrder): RedirectResponse
     {
         if ($purchaseOrder->status !== 'draft') {

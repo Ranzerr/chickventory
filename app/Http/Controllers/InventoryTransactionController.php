@@ -2,68 +2,101 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\InventoryTransaction;
-use App\Models\StockMovement;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class InventoryTransactionController extends Controller
 {
     public function index(Request $request): View
     {
-        $productTransactions = InventoryTransaction::with('product')
-            ->when($request->filled('search'), fn ($query) => $query->where(function ($query) use ($request) {
-                $query->where('transaction_code', 'like', '%'.$request->string('search').'%')
-                    ->orWhere('reference', 'like', '%'.$request->string('search').'%');
-            }))
-            ->when($request->filled('type'), fn ($query) => $query->where('type', $request->string('type')))
-            ->get()
-            ->map(fn (InventoryTransaction $transaction) => (object) [
-                'transaction_code' => $transaction->transaction_code,
-                'occurred_at' => $transaction->occurred_at,
-                'reference' => $transaction->reference,
-                'item_name' => $transaction->product?->name ?? 'Unknown',
-                'type' => $transaction->type,
-                'quantity' => $transaction->quantity,
-                'unit' => $transaction->product?->unit ?? 'pcs',
-                'source' => $transaction->source,
-                'status' => $transaction->status,
-            ]);
+        $search = $request->string('search')->trim()->toString();
+        $type = $request->string('type')->trim()->toString();
 
-        $materialMovements = StockMovement::with('material')
-            ->when($request->filled('search'), fn ($query) => $query->where(function ($query) use ($request) {
-                $search = '%'.$request->string('search').'%';
-
-                $query->where('remarks', 'like', $search)
-                    ->orWhereHas('material', fn ($query) => $query->where('name', 'like', $search));
-            }))
-            ->when($request->filled('type'), function ($query) use ($request): void {
-                $type = $request->string('type')->toString();
-
-                if ($type === 'stock_in') {
-                    $query->whereIn('movement_type', ['stock_in', 'purchase_in']);
-                } elseif ($type === 'stock_out') {
-                    $query->where('movement_type', 'usage_out');
-                }
+        // 1. Build Query for Product Transactions
+        $productQuery = DB::table('inventory_transactions as it')
+            ->leftJoin('products as p', 'it.product_id', '=', 'p.product_id')
+            ->select([
+                'it.transaction_code',
+                'it.occurred_at',
+                'it.reference',
+                DB::raw("COALESCE(p.name, 'Unknown') as item_name"),
+                'it.type',
+                'it.quantity',
+                DB::raw("COALESCE(p.unit, 'pcs') as unit"),
+                'it.source',
+                'it.status',
+            ])
+            
+            ->when($search, function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('it.transaction_code', 'like', "%{$search}%")
+                      ->orWhere('it.reference', 'like', "%{$search}%")
+                      ->orWhere('p.name', 'like', "%{$search}%");
+                });
             })
-            ->get()
-            ->map(fn (StockMovement $movement) => (object) [
-                'transaction_code' => 'MOV-'.str_pad((string) $movement->id, 6, '0', STR_PAD_LEFT),
-                'occurred_at' => $movement->created_at,
-                'reference' => $movement->remarks,
-                'item_name' => $movement->material?->name ?? 'Unknown',
-                'type' => in_array($movement->movement_type, ['stock_in', 'purchase_in'], true) ? 'stock_in' : 'stock_out',
-                'quantity' => $movement->quantity,
-                'unit' => $movement->material?->unit ?? 'pcs',
-                'source' => $movement->reference_type === 'purchase' ? 'Purchasing' : 'Manual Entry',
-                'status' => 'completed',
-            ]);
+            ->when($type, function ($query) use ($type) {
+                $query->where('it.type', $type);
+            });
 
-        $transactions = $productTransactions->concat($materialMovements)
-            ->sortByDesc(fn (object $transaction) => $transaction->occurred_at?->timestamp ?? 0)
-            ->take(100)
-            ->values();
+        // 2. Build Query for Stock Movements
+        $movementQuery = DB::table('stock_movements as sm')
+            ->leftJoin('raw_materials as rm', 'sm.material_id', '=', 'rm.id')
+            ->select([
+                DB::raw("CONCAT('MOV-', LPAD(sm.id, 6, '0')) as transaction_code"),
+                'sm.created_at as occurred_at',
+                'sm.remarks as reference',
+                DB::raw("COALESCE(rm.name, 'Unknown') as item_name"),
+                DB::raw("CASE WHEN sm.movement_type IN ('stock_in', 'purchase_in') THEN 'stock_in' ELSE 'stock_out' END as type"),
+                'sm.quantity',
+                DB::raw("COALESCE(rm.unit, 'pcs') as unit"),
+                DB::raw("CASE WHEN sm.reference_type = 'purchase' THEN 'Purchasing' ELSE 'Manual Entry' END as source"),
+                DB::raw("'completed' as status"),
+            ])
+            ->when($search, function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('sm.remarks', 'like', "%{$search}%")
+                      ->orWhere('rm.name', 'like', "%{$search}%");
+                });
+            })
+            ->when($type, function ($query) use ($type) {
+                if ($type === 'stock_in') {
+                    $query->whereIn('sm.movement_type', ['stock_in', 'purchase_in']);
+                } elseif ($type === 'stock_out') {
+                    $query->where('sm.movement_type', 'usage_out');
+                }
+            });
 
-        return view('inventory-transactions', ['title' => 'Inventory Transactions', 'transactions' => $transactions]);
+        // 3. Combine both tables at DB level using UNION
+        $unionQuery = $productQuery->unionAll($movementQuery);
+
+        // 4. Wrap Union Query to apply efficient DB sorting and pagination
+        $perPage = 20;
+        $page = Paginator::resolveCurrentPage('page');
+
+        $total = DB::table(DB::raw("({$unionQuery->toSql()}) as combined"))
+            ->mergeBindings($unionQuery)
+            ->count();
+
+        $results = DB::table(DB::raw("({$unionQuery->toSql()}) as combined"))
+            ->mergeBindings($unionQuery)
+            ->orderByDesc('occurred_at')
+            ->forPage($page, $perPage)
+            ->get();
+
+        $paginatedTransactions = new LengthAwarePaginator(
+            $results,
+            $total,
+            $perPage,
+            $page,
+            ['path' => Paginator::resolveCurrentPath(), 'query' => $request->query()]
+        );
+
+        return view('inventory-transactions', [
+            'title' => 'Inventory Transactions',
+            'transactions' => $paginatedTransactions,
+        ]);
     }
 }

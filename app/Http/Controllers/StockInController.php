@@ -9,11 +9,19 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class StockInController extends Controller
 {
+    private function clearMetricsCache(): void
+    {
+        Cache::forget('dashboard.metrics.v4');
+        Cache::forget('dashboard.data.v1');
+        Cache::forget('shared.low_stock_count.v1');
+    }
+
     public function index(Request $request): View
     {
         $selectedItem = null;
@@ -23,46 +31,55 @@ class StockInController extends Controller
             $selectedItem = 'product:'.$request->input('product_id');
         }
 
-        $recentProductStockIns = InventoryTransaction::with('product')
-            ->where('type', 'stock_in')
-            ->latest('occurred_at')
-            ->limit(10)
-            ->get()
-            ->map(fn ($txn) => (object) [
-                'reference' => $txn->reference ?: $txn->transaction_code,
-                'date' => $txn->occurred_at,
-                'item_name' => $txn->product?->name ?? 'Unknown',
-                'item_type' => 'Product',
-                'quantity' => $txn->quantity,
-                'unit' => $txn->product?->unit ?? 'pcs',
-                'status' => $txn->status,
-            ]);
+        // DB-level UNION query for top 10 recent stock-in events
+        $productQuery = DB::table('inventory_transactions as it')
+            ->leftJoin('products as p', 'it.product_id', '=', 'p.product_id')
+            ->select([
+                DB::raw("COALESCE(it.reference, it.transaction_code) as reference"),
+                'it.occurred_at as date',
+                DB::raw("COALESCE(p.name, 'Unknown') as item_name"),
+                DB::raw("'Product' as item_type"),
+                'it.quantity',
+                DB::raw("COALESCE(p.unit, 'pcs') as unit"),
+                'it.status',
+            ])
+            ->where('it.type', 'stock_in');
 
-        $recentMaterialStockIns = StockMovement::with('material')
-            ->whereIn('movement_type', ['stock_in', 'purchase_in'])
-            ->latest('created_at')
-            ->limit(10)
-            ->get()
-            ->map(fn ($mov) => (object) [
-                'reference' => $mov->remarks ?: 'Manual Stock In',
-                'date' => $mov->created_at,
-                'item_name' => $mov->material?->name ?? 'Unknown',
-                'item_type' => 'Ingredient',
-                'quantity' => $mov->quantity,
-                'unit' => $mov->material?->unit ?? 'pcs',
-                'status' => 'completed',
-            ]);
+        $materialQuery = DB::table('stock_movements as sm')
+            ->leftJoin('raw_materials as rm', 'sm.material_id', '=', 'rm.id')
+            ->select([
+                DB::raw("COALESCE(sm.remarks, 'Manual Stock In') as reference"),
+                'sm.created_at as date',
+                DB::raw("COALESCE(rm.name, 'Unknown') as item_name"),
+                DB::raw("'Ingredient' as item_type"),
+                'sm.quantity',
+                DB::raw("COALESCE(rm.unit, 'pcs') as unit"),
+                DB::raw("'completed' as status"),
+            ])
+            ->whereIn('sm.movement_type', ['stock_in', 'purchase_in']);
 
-        $recentStockIns = $recentProductStockIns->concat($recentMaterialStockIns)
-            ->sortByDesc(fn ($item) => $item->date?->timestamp ?? 0)
-            ->values()
-            ->take(10);
+        $unionQuery = $productQuery->unionAll($materialQuery);
+
+        $recentStockIns = DB::table(DB::raw("({$unionQuery->toSql()}) as combined"))
+            ->mergeBindings($unionQuery)
+            ->orderByDesc('date')
+            ->limit(10)
+            ->get();
 
         return view('stock-in', [
             'title' => 'Stock In',
-            'products' => Product::where('status', 'active')->orderBy('name')->get(),
-            'rawMaterials' => RawMaterial::where('status', 'active')->orderBy('name')->get(),
-            'suppliers' => Supplier::where('status', 'active')->orderBy('name')->get(),
+            'products' => Product::select(['product_id as id', 'product_code', 'name', 'unit'])
+                ->whereIn('status', ['active', 'available'])
+                ->orderBy('name')
+                ->get(),
+            'rawMaterials' => RawMaterial::select(['id', 'material_code', 'name', 'unit'])
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->get(),
+            'suppliers' => Supplier::select(['id', 'name'])
+                ->where('status', 'active')
+                ->orderBy('name')
+                ->get(),
             'recentStockIns' => $recentStockIns,
             'selectedItem' => $selectedItem,
         ]);
@@ -72,7 +89,7 @@ class StockInController extends Controller
     {
         $validated = $request->validate([
             'stock_item' => ['nullable', 'string'],
-            'product_id' => ['nullable', 'exists:products,id'],
+            'product_id' => ['nullable', 'exists:products,product_id'],
             'material_id' => ['nullable', 'exists:raw_materials,id'],
             'supplier_id' => ['nullable', 'exists:suppliers,id'],
             'quantity' => ['required', 'numeric', 'gt:0'],
@@ -110,8 +127,7 @@ class StockInController extends Controller
                 ]);
             });
 
-            cache()->forget('dashboard.metrics.v3');
-            cache()->forget('shared.low_stock_count.v1');
+            $this->clearMetricsCache();
 
             return to_route('stock-in')->with('success', 'Ingredient stock received successfully.');
         }
@@ -132,8 +148,7 @@ class StockInController extends Controller
             ]);
         });
 
-        cache()->forget('dashboard.metrics.v3');
-        cache()->forget('shared.low_stock_count.v1');
+        $this->clearMetricsCache();
 
         return to_route('stock-in')->with('success', 'Product stock received successfully.');
     }

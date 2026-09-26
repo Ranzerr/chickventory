@@ -86,7 +86,7 @@
                                 <tr>
                                     <td>
                                         @if($product->image)
-                                            <img src="{{ route('products.image', $product) }}" alt="{{ $product->name }}" style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px;">
+                                           <img src="{{ route('products.image', $product) }}" alt="{{ $product->name }}" style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px;">
                                         @else
                                             <span style="color: var(--muted);">No image</span>
                                         @endif

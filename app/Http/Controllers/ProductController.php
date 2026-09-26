@@ -7,41 +7,63 @@ use App\Models\RawMaterial;
 use App\Models\Supplier;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
 class ProductController extends Controller
 {
+    /**
+     * Clear all active metrics caches across dashboard and navigation badges.
+     */
+    private function clearMetricsCache(): void
+    {
+        Cache::forget('dashboard.metrics.v4');
+        Cache::forget('dashboard.data.v1');
+        Cache::forget('shared.low_stock_count.v1');
+    }
+
     public function index(Request $request): View
     {
-        $search = $request->string('search');
-
-        $productsQuery = Product::with(['supplier', 'recipeMaterials'])->whereIn('status', ['active', 'available'])
-            ->when($request->filled('search'), fn ($query) => $query->where(function ($query) use ($search) {
-                $query->where('name', 'like', '%'.$search.'%')
-                    ->orWhere('product_code', 'like', '%'.$search.'%');
-            }))
-            ->when($request->filled('category'), fn ($query) => $query->where('category', $request->string('category')))
-            ->orderBy('name');
-
-        $rawMaterialsQuery = RawMaterial::where('status', 'active')
-            ->when($request->filled('search'), fn ($query) => $query->where(function ($query) use ($search) {
-                $query->where('name', 'like', '%'.$search.'%')
-                    ->orWhere('material_code', 'like', '%'.$search.'%');
-            }))
-            ->orderBy('name');
-
-        $products = $productsQuery->get();
-        $rawMaterials = $rawMaterialsQuery->get();
-        $suppliers = Supplier::where('status', 'active')->orderBy('name')->get();
-
-        $categories = $products->pluck('category')->filter()->unique()->sort()->values();
-        $units = collect(['pcs', 'kg', 'g', 'L', 'mL', 'pack', 'box', 'can', 'bottle', 'serving'])
-            ->merge($products->pluck('unit'))
-            ->merge($rawMaterials->pluck('unit'))
-            ->filter()->unique()->sort()->values();
-
+        $search = $request->string('search')->trim()->toString();
+        $category = $request->string('category')->trim()->toString();
         $activeTab = $request->input('tab', 'products');
+
+        // 1. Paginated Products with Eager Loading (Includes current_stock for recipe calculations)
+        $products = Product::with([
+            'recipeMaterials:id,name,unit,current_stock',
+        ])
+            ->whereIn('status', ['active', 'available'])
+            ->when($search, fn ($query) => $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('product_code', 'like', "%{$search}%");
+            }))
+            ->when($category, fn ($query) => $query->where('category', $category))
+            ->orderBy('name')
+            ->paginate(15);
+
+        // 2. Load Raw Materials only when searching or on ingredients tab
+        $rawMaterials = RawMaterial::select(['id', 'material_code', 'name', 'unit', 'current_stock', 'minimum_stock', 'status'])
+            ->where('status', 'active')
+            ->when($search && $activeTab === 'ingredients', fn ($query) => $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('material_code', 'like', "%{$search}%");
+            }))
+            ->orderBy('name')
+            ->get();
+
+        // 3. Lightweight Lookup Lists
+        $suppliers = Supplier::select(['id', 'name'])->where('status', 'active')->orderBy('name')->get();
+
+        // 4. Query distinct categories directly from database
+        $categories = Product::whereIn('status', ['active', 'available'])
+            ->whereNotNull('category')
+            ->distinct()
+            ->pluck('category')
+            ->sort()
+            ->values();
+
+        $units = collect(['pcs', 'kg', 'g', 'L', 'mL', 'pack', 'box', 'can', 'bottle', 'serving']);
 
         return view('products', [
             'title' => 'Products / Inventory',
@@ -51,6 +73,7 @@ class ProductController extends Controller
             'categories' => $categories,
             'units' => $units,
             'activeTab' => $activeTab,
+            'isAdmin' => auth()->user()?->role === 'Admin' || session('is_admin', false),
         ]);
     }
 
@@ -62,7 +85,6 @@ class ProductController extends Controller
             'price' => ['required', 'numeric', 'min:0', 'max:99999999.99'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'category' => ['required', 'string', 'max:100'],
-            'supplier_id' => ['nullable', 'exists:suppliers,id'],
             'current_stock' => ['nullable', 'numeric', 'min:0'],
             'minimum_stock' => ['nullable', 'numeric', 'min:0'],
             'unit' => ['required', 'string', 'max:30'],
@@ -77,15 +99,13 @@ class ProductController extends Controller
             'image' => $image?->getContent(),
             'image_mime_type' => $image?->getMimeType(),
             'category' => $validated['category'],
-            'supplier_id' => $validated['supplier_id'] ?? null,
             'current_stock' => $validated['current_stock'] ?? 0,
             'minimum_stock' => $validated['minimum_stock'] ?? 0,
             'unit' => $validated['unit'],
-            'status' => 'active',
+            'status' => 'available',
         ]);
 
-        cache()->forget('dashboard.metrics.v3');
-        cache()->forget('shared.low_stock_count.v1');
+        $this->clearMetricsCache();
 
         return redirect()->route('products', ['tab' => 'products'])->with('success', 'Product added successfully.');
     }
@@ -93,12 +113,11 @@ class ProductController extends Controller
     public function update(Request $request, Product $product): RedirectResponse
     {
         $validated = $request->validate([
-            'product_code' => ['required', 'string', 'max:50', 'unique:products,product_code,'.$product->getKey()],
+            'product_code' => ['required', 'string', 'max:50', 'unique:products,product_code,'.$product->getKey().',product_id'],
             'name' => ['required', 'string', 'max:255'],
             'price' => ['required', 'numeric', 'min:0', 'max:99999999.99'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'category' => ['required', 'string', 'max:100'],
-            'supplier_id' => ['nullable', 'exists:suppliers,id'],
             'current_stock' => ['nullable', 'numeric', 'min:0'],
             'minimum_stock' => ['nullable', 'numeric', 'min:0'],
             'unit' => ['required', 'string', 'max:30'],
@@ -114,8 +133,7 @@ class ProductController extends Controller
 
         $product->update($validated);
 
-        cache()->forget('dashboard.metrics.v3');
-        cache()->forget('shared.low_stock_count.v1');
+        $this->clearMetricsCache();
 
         return redirect()->route('products', ['tab' => 'products'])->with('success', 'Product updated successfully.');
     }
@@ -131,10 +149,9 @@ class ProductController extends Controller
 
     public function destroy(Product $product): RedirectResponse
     {
-        $product->update(['status' => 'inactive']);
+        $product->update(['status' => 'unavailable']);
 
-        cache()->forget('dashboard.metrics.v3');
-        cache()->forget('shared.low_stock_count.v1');
+        $this->clearMetricsCache();
 
         return redirect()->route('products', ['tab' => 'products'])->with('success', 'Product deleted successfully.');
     }

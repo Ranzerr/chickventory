@@ -5,9 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\RawMaterial;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class IngredientController extends Controller
 {
+    /**
+     * Clear all cached metrics shared across dashboard and navigation badges.
+     */
+    private function clearDashboardCache(): void
+    {
+        Cache::forget('dashboard.metrics.v4');
+        Cache::forget('dashboard.data.v1');
+        Cache::forget('shared.low_stock_count.v1');
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -20,10 +31,10 @@ class IngredientController extends Controller
 
         RawMaterial::create($validated + ['status' => 'active']);
 
-        cache()->forget('dashboard.metrics.v3');
-        cache()->forget('shared.low_stock_count.v1');
+        $this->clearDashboardCache();
 
-        return redirect()->route('products', ['tab' => 'ingredients'])->with('success', 'Ingredient added successfully.');
+        return redirect()->route('products', ['tab' => 'ingredients'])
+            ->with('success', 'Ingredient added successfully.');
     }
 
     public function update(Request $request, RawMaterial $ingredient): RedirectResponse
@@ -38,20 +49,19 @@ class IngredientController extends Controller
 
         $ingredient->update($validated);
 
-        cache()->forget('dashboard.metrics.v3');
-        cache()->forget('shared.low_stock_count.v1');
+        $this->clearDashboardCache();
 
-        return redirect()->route('products', ['tab' => 'ingredients'])->with('success', 'Ingredient updated successfully.');
+        return redirect()->route('products', ['tab' => 'ingredients'])
+            ->with('success', 'Ingredient updated successfully.');
     }
 
     public function destroy(RawMaterial $ingredient): RedirectResponse
     {
         $ingredient->update(['status' => 'inactive']);
 
-        cache()->forget('dashboard.metrics.v3');
-        cache()->forget('shared.low_stock_count.v1');
+        $this->clearDashboardCache();
 
-        return redirect()->route('products', ['tab' => 'ingredients'])->with('success', 'Ingredient deleted successfully.');
+        return redirect()->route('products', ['tab' => 'ingredients'])
+            ->with('success', 'Ingredient deleted successfully.');
     }
 }
-
