@@ -48,10 +48,6 @@ Route::middleware('auth')->group(function () {
     Route::get('purchases', [PurchaseController::class, 'index'])->name('purchases');
     Route::post('purchases', [PurchaseController::class, 'store'])->name('purchases.store');
 
-    // Sales — any authenticated user can record a sale; only admins can delete (restores stock).
-    Route::get('sales', [OrderItemController::class, 'index'])->name('sales');
-    Route::post('sales', [OrderItemController::class, 'store'])->name('sales.store');
-
     // Expenses — any authenticated user can add; only admins can edit/delete/transfer.
     Route::get('expenses', [ExpenseController::class, 'index'])->name('expenses');
     Route::post('expenses', [ExpenseController::class, 'store'])->name('expenses.store');
@@ -60,31 +56,38 @@ Route::middleware('auth')->group(function () {
     Route::post('products/{product}/recipe', [RecipeController::class, 'store'])->name('recipes.store');
 
     Route::get('reports', [ReportController::class, 'index'])->name('reports');
-    Route::get('users', [UserController::class, 'index'])->name('users');
-    Route::get('settings', [SettingController::class, 'index'])->name('settings');
 
-    // Admin-only: edit and delete access across the system's data.
+    // Admin-only routes: restricted access for manual sales, settings, user management, and sensitive actions.
     Route::middleware('admin')->group(function () {
+        // Manual / Backup Sales Override
+        Route::get('sales', [OrderItemController::class, 'index'])->name('sales');
+        Route::post('sales', [OrderItemController::class, 'store'])->name('sales.store');
+        Route::delete('sales/{order}', [OrderItemController::class, 'destroy'])->name('sales.destroy');
+
+        // Product & Ingredient Admin Actions
         Route::put('products/{product}', [ProductController::class, 'update'])->name('products.update');
         Route::delete('products/{product}', [ProductController::class, 'destroy'])->name('products.destroy');
         Route::put('ingredients/{ingredient}', [IngredientController::class, 'update'])->name('ingredients.update');
         Route::delete('ingredients/{ingredient}', [IngredientController::class, 'destroy'])->name('ingredients.destroy');
         Route::delete('products/{product}/recipe/{material}', [RecipeController::class, 'destroy'])->name('recipes.destroy');
 
+        // Supplier Admin Actions
         Route::put('suppliers/{supplier}', [SupplierController::class, 'update'])->name('suppliers.update');
         Route::delete('suppliers/{supplier}', [SupplierController::class, 'destroy'])->name('suppliers.destroy');
 
+        // Purchase Order & Purchase Admin Actions
         Route::post('purchase-orders/{purchaseOrder}/approve', [PurchaseOrderController::class, 'approve'])->name('purchase-orders.approve');
         Route::delete('purchase-orders/{purchaseOrder}', [PurchaseOrderController::class, 'destroy'])->name('purchase-orders.destroy');
-
         Route::delete('purchases/{purchase}', [PurchaseController::class, 'destroy'])->name('purchases.destroy');
 
-        Route::delete('sales/{order}', [OrderItemController::class, 'destroy'])->name('sales.destroy');
-
+        // Expense Admin Actions
         Route::put('expenses/{expense}', [ExpenseController::class, 'update'])->name('expenses.update');
         Route::delete('expenses/{expense}', [ExpenseController::class, 'destroy'])->name('expenses.destroy');
         Route::post('expenses/{expense}/transfer', [ExpenseController::class, 'transfer'])->name('expenses.transfer');
 
+        // Settings & User Management
+        Route::get('settings', [SettingController::class, 'index'])->name('settings');
+        Route::get('users', [UserController::class, 'index'])->name('users');
         Route::get('users/register', [UserController::class, 'create'])->name('users.create');
         Route::post('users', [UserController::class, 'store'])->name('users.store');
         Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');

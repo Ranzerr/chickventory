@@ -30,7 +30,7 @@
             <label for="inventory-table-select">Display table</label>
             <select id="inventory-table-select" aria-controls="products-tab ingredients-tab">
                 <option value="products-tab" @selected($activeTab !== 'ingredients')>
-                    Finished Products ({{ $products->count() }})
+                    Finished Products ({{ $products->total() }})
                 </option>
                 <option value="ingredients-tab" @selected($activeTab === 'ingredients')>
                     Raw Materials ({{ $rawMaterials->count() }})
@@ -155,11 +155,15 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="{{ $isAdmin ? 9 : 8 }}">No products found. Click "+ Add Product" to create your first menu item.</td>
+                                    <td colspan="{{ $isAdmin ? 10 : 9 }}">No products found. Click "+ Add Product" to create your first menu item.</td>
                                 </tr>
                             @endforelse
                         </tbody>
                     </table>
+                </div>
+                {{-- Added Pagination Links --}}
+                <div style="padding: 16px;">
+                    {{ $products->appends(request()->query())->links() }}
                 </div>
             </div>
         </div>
@@ -439,26 +443,6 @@
     @endif
 
     <script>
-        document.querySelectorAll('[data-tab-target]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const targetId = btn.dataset.tabTarget;
-                document.querySelectorAll('.tab-content').forEach((content) => {
-                    content.style.display = 'none';
-                });
-
-                const targetEl = document.getElementById(targetId);
-                if (targetEl) {
-                    targetEl.style.display = 'block';
-                }
-
-                // Update URL query parameter without page reload
-                const tabParam = targetId === 'ingredients-tab' ? 'ingredients' : 'products';
-                const url = new URL(window.location.href);
-                url.searchParams.set('tab', tabParam);
-                window.history.replaceState({}, '', url.toString());
-            });
-        });
-
         const tableSelect = document.getElementById('inventory-table-select');
         if (tableSelect) {
             tableSelect.addEventListener('change', () => {

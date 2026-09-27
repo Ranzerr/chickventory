@@ -13,8 +13,8 @@ class DashboardController extends Controller
 {
     public function index(): View
     {
-        // Cache the entire dashboard payload for 60 seconds
-        $dashboardData = Cache::remember('dashboard.data.v1', now()->addSeconds(60), function () {
+        // Bumped cache key version to flush stale data
+        $dashboardData = Cache::remember('dashboard.data.v3', now()->addSeconds(60), function () {
             return [
                 'productCount' => Product::whereIn('status', ['active', 'available'])->count(),
                 'totalStock' => RawMaterial::where('status', 'active')->sum('current_stock'),
@@ -23,17 +23,15 @@ class DashboardController extends Controller
                     ->count(),
                 'supplierCount' => Supplier::where('status', 'active')->count(),
                 
-                // Optimized date range query (uses indexes)
                 'ordersToday' => InventoryTransaction::where('source', 'Ordering System')
                     ->where('occurred_at', '>=', today())
                     ->count(),
 
-                // Keep the foreign key available for eager loading the product relation.
                 'recentTransactions' => InventoryTransaction::query()
                     ->select(['id', 'transaction_code', 'reference', 'product_id', 'type', 'quantity', 'status', 'occurred_at'])
                     ->whereHas('product')
                     ->with(['product' => function ($query) {
-                        $query->select(['id', 'name', 'unit']);
+                        $query->select(['product_id', 'name', 'unit']); // Selected product_id primary key
                     }])
                     ->latest('occurred_at')
                     ->limit(10)

@@ -2,17 +2,28 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Expense extends Model
 {
+    use HasFactory;
+
+    /**
+     * The table associated with the model.
+     *
+     * @var string
+     */
+    protected $table = 'expenses';
+
     /**
      * The attributes that are mass assignable.
      *
      * @var array<int, string>
      */
     protected $fillable = [
+        'external_expense_id',
         'purchase_id',
         'description',
         'amount',
@@ -35,10 +46,10 @@ class Expense extends Model
     }
 
     /**
-     * Get the purchase associated with the expense.
+     * Get the purchase associated with this expense (if linked).
      */
     public function purchase(): BelongsTo
     {
-        return $this->belongsTo(Purchase::class);
+        return $this->belongsTo(Purchase::class, 'purchase_id', 'id');
     }
 }

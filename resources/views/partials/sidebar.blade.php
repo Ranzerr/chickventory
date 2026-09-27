@@ -5,24 +5,38 @@
         </a>
     </div>
     <nav class="sidebar-nav" aria-label="Main navigation">
-        @php($items = [
-            ['route' => 'dashboard', 'label' => 'Dashboard', 'icon' => '▦'],
-            ['route' => 'products', 'label' => 'Products / Inventory', 'icon' => '□'],
-            ['route' => 'stock-in', 'label' => 'Stock In', 'icon' => '↓'],
-            ['route' => 'inventory-transactions', 'label' => 'Inventory Transactions', 'icon' => '⇄'],
-            ['route' => 'suppliers', 'label' => 'Suppliers', 'icon' => '♙'],
-            ['route' => 'reports', 'label' => 'Reports', 'icon' => '▥'],
-            ['route' => 'users', 'label' => 'Users', 'icon' => '♙'],
-            ['route' => 'settings', 'label' => 'Settings', 'icon' => '⚙'],
-            ['route' => 'purchase-orders', 'label' => 'Purchase Orders', 'icon' => '▤'],
-            ['route' => 'purchases', 'label' => 'Purchases', 'icon' => '↓'],
-            ['route' => 'sales', 'label' => 'Record Sale', 'icon' => '▣'],
-            ['route' => 'expenses', 'label' => 'Expenses', 'icon' => '₱'],
-        ])
+        @php
+            // Retrieve current authenticated user
+            $user = auth()->user();
+
+            // Extract role string safely from user object or passed view variable
+            $rawRole = strtolower(trim((string) ($user?->role ?? $user?->user_role ?? $currentUserRole ?? '')));
+
+            // Flexible admin check matching 'admin', 'administrator', '1', or a boolean flag
+            $isAdmin = in_array($rawRole, ['admin', 'administrator', '1'], true) || (bool) ($user?->is_admin ?? false);
+
+            $items = [
+                ['route' => 'dashboard', 'label' => 'Dashboard', 'icon' => '▦', 'admin_only' => false],
+                ['route' => 'products', 'label' => 'Products / Inventory', 'icon' => '□', 'admin_only' => false],
+                ['route' => 'stock-in', 'label' => 'Stock In', 'icon' => '↓', 'admin_only' => false],
+                ['route' => 'inventory-transactions', 'label' => 'Inventory Transactions', 'icon' => '⇄', 'admin_only' => false],
+                ['route' => 'suppliers', 'label' => 'Suppliers', 'icon' => '♙', 'admin_only' => false],
+                ['route' => 'reports', 'label' => 'Reports', 'icon' => '▥', 'admin_only' => false],
+                ['route' => 'users', 'label' => 'Users', 'icon' => '♙', 'admin_only' => true],
+                ['route' => 'settings', 'label' => 'Settings', 'icon' => '⚙', 'admin_only' => true],
+                ['route' => 'purchase-orders', 'label' => 'Purchase Orders', 'icon' => '▤', 'admin_only' => false],
+                ['route' => 'purchases', 'label' => 'Purchases', 'icon' => '↓', 'admin_only' => false],
+                ['route' => 'sales', 'label' => 'Manual / Backup Sale', 'icon' => '▣', 'admin_only' => true],
+                ['route' => 'expenses', 'label' => 'Expenses', 'icon' => '₱', 'admin_only' => false],
+            ];
+        @endphp
+
         @foreach ($items as $item)
-            <a class="nav-item {{ request()->routeIs($item['route']) ? 'active' : '' }}" href="{{ route($item['route']) }}">
-                <span class="nav-icon">{{ $item['icon'] }}</span><span>{{ $item['label'] }}</span>
-            </a>
+            @if (!$item['admin_only'] || $isAdmin)
+                <a class="nav-item {{ request()->routeIs($item['route']) ? 'active' : '' }}" href="{{ route($item['route']) }}">
+                    <span class="nav-icon">{{ $item['icon'] }}</span><span>{{ $item['label'] }}</span>
+                </a>
+            @endif
         @endforeach
     </nav>
     <div class="sidebar-message"><strong>Good day!</strong>

@@ -7,7 +7,10 @@
     <div class="user-profile">
         <button class="notification" type="button" aria-label="Notifications">♧<span>{{ $notificationCount }}</span></button>
         <div class="user-avatar">{{ $currentUserInitial }}</div>
-        <div class="user-details"><strong>{{ $currentUserName }}</strong><small>{{ $currentUserRole }}</small></div>
+        <div class="user-details">
+            <strong>{{ $currentUserName }}</strong>
+            <small>{{ $currentUserRole }}</small>
+        </div>
         <form method="POST" action="{{ route('logout') }}">
             @csrf
             <button type="submit" class="outline-btn">Log Out</button>
