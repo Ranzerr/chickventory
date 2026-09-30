@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Expense;
 use App\Models\Purchase;
 use App\Models\PurchaseItem;
 use App\Models\RawMaterial;
@@ -12,6 +13,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class PurchaseController extends Controller
@@ -30,7 +32,7 @@ class PurchaseController extends Controller
             'purchases' => Purchase::with(['supplier:id,name', 'items.material:id,name,unit'])
                 ->latest('purchase_date')
                 ->paginate(15),
-            'materials' => RawMaterial::select(['id', 'name', 'unit', 'current_stock'])
+            'materials' => RawMaterial::select(['id', 'name', 'unit', 'current_stock', 'unit_cost'])
                 ->where('status', 'active')
                 ->orderBy('name')
                 ->get(),
@@ -77,21 +79,38 @@ class PurchaseController extends Controller
             ]);
 
             $upsertData = [];
+            $totalPurchaseCost = 0;
             $now = now();
 
             foreach ($validated['material_id'] as $index => $materialId) {
-                $quantity = $validated['quantity_received'][$index];
-                $unitCost = $validated['unit_cost'][$index];
+                $quantity = (float) $validated['quantity_received'][$index];
+                $unitCost = (float) $validated['unit_cost'][$index];
+                $subtotal = $quantity * $unitCost;
+                $totalPurchaseCost += $subtotal;
 
                 $material = RawMaterial::lockForUpdate()->findOrFail($materialId);
-                $material->increment('current_stock', $quantity);
+                
+                // 1. Calculate Weighted Average Cost (WAC)
+                $currentStock = (float) $material->current_stock;
+                $currentCost  = (float) ($material->unit_cost ?? 0);
+                $newStock     = $currentStock + $quantity;
+
+                $newWac = $newStock > 0 
+                    ? (($currentStock * $currentCost) + ($quantity * $unitCost)) / $newStock 
+                    : $unitCost;
+
+                // 2. Update stock and unit cost
+                $material->update([
+                    'current_stock' => $newStock,
+                    'unit_cost'     => $newWac,
+                ]);
 
                 PurchaseItem::create([
                     'purchase_id' => $purchase->id,
                     'material_id' => $material->id,
                     'quantity_received' => $quantity,
                     'unit_cost' => $unitCost,
-                    'subtotal' => $quantity * $unitCost,
+                    'subtotal' => $subtotal,
                 ]);
 
                 StockMovement::create([
@@ -120,10 +139,23 @@ class PurchaseController extends Controller
                 );
             }
 
+            // 3. Automatically record Expense for Sales Monitoring
+            $supplierName = Supplier::find($validated['supplier_id'])?->name ?? 'Supplier';
+            Expense::create([
+                'purchase_id'          => $purchase->id,
+                'external_expense_id'  => 'EXP-' . strtoupper(Str::random(12)),
+                'description'          => 'Purchase Order: ' . $supplierName,
+                'category'             => 'Operating Expense',
+                'amount'               => $totalPurchaseCost,
+                'expense_date'         => $validated['purchase_date'],
+                'source_system'        => 'ChickyVentory',
+                'transferred_to_sales' => true,
+                'sync_status'          => 'Synced',
+            ]);
+
             if ($purchaseOrder) {
                 $ordered = $purchaseOrder->items->sum('quantity_ordered');
                 
-                // Optimized DB sum calculation
                 $received = DB::table('purchase_items')
                     ->join('purchases', 'purchase_items.purchase_id', '=', 'purchases.id')
                     ->where('purchases.po_id', $purchaseOrder->id)
@@ -135,7 +167,7 @@ class PurchaseController extends Controller
 
         $this->clearMetricsCache();
 
-        return to_route('purchases')->with('success', 'Purchase received successfully.');
+        return to_route('purchases')->with('success', 'Purchase received, ingredient unit cost updated, and expense logged.');
     }
 
     public function destroy(Purchase $purchase): RedirectResponse
@@ -150,7 +182,9 @@ class PurchaseController extends Controller
                 }
             }
 
-            // Single query deletion outside loop
+            // Delete associated expense record automatically
+            Expense::where('purchase_id', $purchase->id)->delete();
+
             StockMovement::where('reference_type', 'purchase')
                 ->where('reference_id', $purchase->id)
                 ->delete();
@@ -168,6 +202,6 @@ class PurchaseController extends Controller
 
         $this->clearMetricsCache();
 
-        return to_route('purchases')->with('success', 'Purchase deleted and stock reversed.');
+        return to_route('purchases')->with('success', 'Purchase deleted, stock reversed, and linked expense removed.');
     }
 }

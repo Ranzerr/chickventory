@@ -20,6 +20,7 @@ class OrderItem extends Model
         'external_order_id',
         'product_id',
         'quantity',
+        'cost_price',
         'order_date',
         'source_system',
     ];
@@ -32,7 +33,8 @@ class OrderItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'integer',
+            'quantity'   => 'integer',
+            'cost_price' => 'decimal:2',
             'order_date' => 'datetime',
         ];
     }
@@ -55,17 +57,24 @@ class OrderItem extends Model
     }
 
     /**
-     * Model Boot Hook: Automatically deduct finished product stock and log
-     * an automatic Stock Out inventory transaction upon order creation.
+     * Model Boot Hooks
      */
     protected static function booted(): void
     {
+        // 1. Before Creating: Automatically snapshot current live product recipe cost if not provided
+        static::creating(function (OrderItem $item) {
+            if (is_null($item->cost_price) && $item->product) {
+                $item->cost_price = $item->product->cost_to_produce;
+            }
+        });
+
+        // 2. After Created: Automatically deduct finished product stock & log transaction
         static::created(function (OrderItem $item) {
             if ($item->product) {
-                // 1. Deduct finished product current_stock
+                // Deduct finished product current_stock
                 $item->product->decrement('current_stock', $item->quantity);
 
-                // 2. Automatically record Stock Out transaction
+                // Automatically record Stock Out transaction
                 InventoryTransaction::create([
                     'transaction_code' => 'ORD-TXN-' . str_pad((string) $item->id, 6, '0', STR_PAD_LEFT),
                     'product_id'       => $item->product_id,

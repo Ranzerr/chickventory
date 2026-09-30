@@ -13,8 +13,8 @@ class DashboardController extends Controller
 {
     public function index(): View
     {
-        // Bumped cache key version to flush stale data
-        $dashboardData = Cache::remember('dashboard.data.v3', now()->addSeconds(60), function () {
+        // Version 5 cache key storing plain arrays instead of Eloquent model objects
+        $dashboardData = Cache::remember('dashboard.data.v5', now()->addSeconds(60), function () {
             return [
                 'productCount' => Product::whereIn('status', ['active', 'available'])->count(),
                 'totalStock' => RawMaterial::where('status', 'active')->sum('current_stock'),
@@ -31,16 +31,19 @@ class DashboardController extends Controller
                     ->select(['id', 'transaction_code', 'reference', 'product_id', 'type', 'quantity', 'status', 'occurred_at'])
                     ->whereHas('product')
                     ->with(['product' => function ($query) {
-                        $query->select(['product_id', 'name', 'unit']); // Selected product_id primary key
+                        $query->select(['product_id', 'name', 'unit']);
                     }])
                     ->latest('occurred_at')
                     ->limit(10)
                     ->get(),
 
+                // Store as plain array to prevent PHP unserialize incomplete object errors
                 'lowStockMaterials' => RawMaterial::whereColumn('current_stock', '<', 'minimum_stock')
                     ->where('status', 'active')
+                    ->select(['id', 'name', 'current_stock', 'minimum_stock', 'unit'])
                     ->limit(5)
-                    ->get(),
+                    ->get()
+                    ->toArray(),
             ];
         });
 

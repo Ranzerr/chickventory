@@ -33,7 +33,7 @@
                             <optgroup label="🥕 Ingredients & Raw Materials">
                                 @foreach ($rawMaterials as $material)
                                     <option value="ingredient:{{ $material->id }}" @selected(old('stock_item', $selectedItem) === 'ingredient:'.$material->id)>
-                                        {{ $material->name }} ({{ $material->unit }}) — Current: {{ number_format($material->current_stock, 2) }}
+                                        {{ $material->name }} ({{ $material->unit }}) — Current: {{ number_format($material->current_stock, 2) }} | Cost: ₱{{ number_format($material->unit_cost, 2) }}
                                     </option>
                                 @endforeach
                             </optgroup>
@@ -60,6 +60,10 @@
                 <label>Quantity Received
                     <input name="quantity" type="number" step="0.01" min="0.01" value="{{ old('quantity') }}" placeholder="Enter quantity" required>
                 </label>
+                <label>Unit Cost Paid (₱)
+                    <input name="unit_cost" type="number" step="0.0001" min="0" value="{{ old('unit_cost') }}" placeholder="e.g. 180.00 (leave blank to keep current)">
+                    <small style="color: var(--muted); font-size: 11px;">Entering a cost updates the ingredient's weighted average unit price.</small>
+                </label>
                 <label>Date Received
                     <input name="date_received" type="date" value="{{ old('date_received', now()->toDateString()) }}" required>
                 </label>
@@ -84,11 +88,17 @@
                             <th>Item Name</th>
                             <th>Item Type</th>
                             <th>Quantity Received</th>
+                            <th>Unit Cost</th>
+                            <th>Total Cost</th>
                             <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse ($recentStockIns as $transaction)
+                            @php
+                                $unitCost = $transaction->unit_cost ?? 0;
+                                $totalCost = $transaction->quantity * $unitCost;
+                            @endphp
                             <tr>
                                 <td>{{ $transaction->reference ?: '-' }}</td>
                                 <td>{{ $transaction->date ? \Carbon\Carbon::parse($transaction->date)->format('M d, Y') : '-' }}</td>
@@ -99,11 +109,13 @@
                                     </span>
                                 </td>
                                 <td>{{ number_format($transaction->quantity, 2) }} {{ $transaction->unit }}</td>
+                                <td>{{ $unitCost > 0 ? '₱' . number_format($unitCost, 2) : '-' }}</td>
+                                <td><strong>{{ $totalCost > 0 ? '₱' . number_format($totalCost, 2) : '-' }}</strong></td>
                                 <td><span class="badge green">{{ Str::title($transaction->status) }}</span></td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6">No stock-in transactions yet.</td>
+                                <td colspan="8">No stock-in transactions yet.</td>
                             </tr>
                         @endforelse
                     </tbody>

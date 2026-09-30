@@ -18,6 +18,8 @@ class RawMaterial extends Model
         'material_code',
         'name',
         'unit',
+        'unit_cost',
+        'yield_percent',
         'current_stock',
         'minimum_stock',
         'status',
@@ -31,9 +33,24 @@ class RawMaterial extends Model
     protected function casts(): array
     {
         return [
+            'unit_cost' => 'decimal:4',
+            'yield_percent' => 'decimal:2',
             'current_stock' => 'decimal:4',
             'minimum_stock' => 'decimal:4',
         ];
+    }
+
+    /**
+     * Accessor: Calculates effective unit cost accounting for unusable portion/waste yield.
+     * Example: ₱100/kg with 80% yield = ₱125/kg effective cost.
+     */
+    public function getEffectiveUnitCostAttribute(): float
+    {
+        if ($this->yield_percent <= 0) {
+            return (float) $this->unit_cost;
+        }
+
+        return (float) $this->unit_cost / ($this->yield_percent / 100);
     }
 
     /**
@@ -52,8 +69,16 @@ class RawMaterial extends Model
     public function products(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'product_recipes', 'material_id', 'product_id')
-            ->withPivot('quantity_required')
+            ->withPivot(['quantity_required', 'unit', 'conversion_factor'])
             ->withTimestamps();
+    }
+
+    /**
+     * Get all recipe items for this raw material.
+     */
+    public function productRecipes(): HasMany
+    {
+        return $this->hasMany(ProductRecipe::class, 'material_id');
     }
 
     /**

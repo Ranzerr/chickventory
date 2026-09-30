@@ -4,7 +4,7 @@
         <div class="page-header">
             <div>
                 <h1>Products / Inventory</h1>
-                <p>Manage finished menu products, recipes, and kitchen ingredients.</p>
+                <p>Manage finished menu products, recipes, product costing, and kitchen ingredients.</p>
             </div>
             <div class="page-actions">
                 <a class="outline-btn" href="{{ route('stock-in') }}">↓ Stock In</a>
@@ -59,7 +59,7 @@
                 <div class="panel-header">
                     <div>
                         <h2>Finished Products (Menu Items)</h2>
-                        <small style="color: var(--muted);">Items sold to customers. Each product has a recipe of ingredients that deduct automatically upon sale.</small>
+                        <small style="color: var(--muted);">Items sold to customers. Profit margins and COGS are computed dynamically based on ingredient costs.</small>
                     </div>
                     <button class="orange-btn" type="button" data-modal-open="product-modal" style="font-size: 12px; padding: 7px 14px;">+ New Product</button>
                 </div>
@@ -71,8 +71,9 @@
                                 <th>Product Code</th>
                                 <th>Product Name</th>
                                 <th>Price</th>
+                                <th>Cost (COGS)</th>
+                                <th>Profit / Margin</th>
                                 <th>Category</th>
-                                <th>Unit</th>
                                 <th>Available Stock</th>
                                 <th>Status</th>
                                 <th>Recipe & Ingredients</th>
@@ -93,12 +94,31 @@
                                     </td>
                                     <td><strong>{{ $product->product_code }}</strong></td>
                                     <td>{{ $product->name }}</td>
-                                    <td>{{ $product->price !== null ? number_format((float) $product->price, 2) : 'N/A' }}</td>
+                                    <td><strong>₱{{ $product->price !== null ? number_format((float) $product->price, 2) : '0.00' }}</strong></td>
+                                    
+                                    {{-- Cost to Produce (COGS) --}}
+                                    <td>
+                                        <span style="font-weight: bold; color: #d32f2f;">₱{{ number_format($product->cost_to_produce, 2) }}</span>
+                                    </td>
+
+                                    {{-- Profit & Margin Percentage Badge --}}
+                                    <td>
+                                        <div style="font-size: 12px; font-weight: bold; color: #2e7d32;">
+                                            ₱{{ number_format($product->profit_margin, 2) }}
+                                        </div>
+                                        @php
+                                            $marginPct = $product->profit_margin_percentage;
+                                            $badgeClass = $marginPct >= 60 ? 'green' : ($marginPct >= 30 ? 'orange' : 'orange');
+                                        @endphp
+                                        <span class="badge {{ $badgeClass }}" style="font-size: 10px; margin-top: 2px;">
+                                            {{ number_format($marginPct, 1) }}% Margin
+                                        </span>
+                                    </td>
+
                                     <td>{{ $product->category }}</td>
-                                    <td>{{ $product->unit }}</td>
                                     <td>
                                         <strong>{{ number_format($product->availableStock()) }}</strong>
-                                        <small style="display: block; color: var(--muted);">based on recipe ingredients</small>
+                                        <small style="display: block; color: var(--muted);">based on recipe</small>
                                     </td>
                                     <td>
                                         <span class="badge {{ $product->isLowStock() ? 'orange' : 'green' }}">
@@ -106,14 +126,20 @@
                                         </span>
                                     </td>
                                     <td>
-                                        <details style="min-width: 260px;">
+                                        <details style="min-width: 280px;">
                                             <summary style="cursor: pointer; font-weight: bold; color: var(--orange);">
                                                 {{ $product->recipeMaterials->count() }} {{ Str::plural('ingredient', $product->recipeMaterials->count()) }}
                                             </summary>
                                             <div style="padding: 8px; background: #fffaf5; border: 1px solid var(--orange-border); border-radius: 6px; margin-top: 6px;">
                                                 @forelse($product->recipeMaterials as $material)
-                                                    <div class="recipe-summary-item" style="display: flex; justify-content: space-between; align-items: center;">
-                                                        <span>• {{ $material->name }}: <strong>{{ $material->pivot->quantity_required }} {{ $material->unit }}</strong></span>
+                                                    @php
+                                                        $unitCost = $material->unit_cost ?? 0;
+                                                        $factor = $material->pivot->conversion_factor ?? 1;
+                                                        $qty = $material->pivot->quantity_required ?? 0;
+                                                        $lineCost = ($qty * $factor) * ($material->effective_unit_cost ?? $unitCost);
+                                                    @endphp
+                                                    <div class="recipe-summary-item" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 12px;">
+                                                        <span>• {{ $material->name }}: <strong>{{ $qty }} {{ $material->pivot->unit ?? $material->unit }}</strong> (<span style="color: #d32f2f;">₱{{ number_format($lineCost, 2) }}</span>)</span>
                                                         @if($isAdmin)
                                                             <form method="POST" action="{{ route('recipes.destroy', [$product, $material]) }}" onsubmit="return confirm('Remove {{ $material->name }} from this recipe?');" style="display:inline;">
                                                                 @csrf
@@ -126,16 +152,29 @@
                                                     <div style="font-size: 11px; color: var(--muted); margin-bottom: 6px;">No recipe ingredients added yet.</div>
                                                 @endforelse
 
-                                                <form method="POST" action="{{ route('recipes.store', $product) }}" class="recipe-add-row">
+                                                <form method="POST" action="{{ route('recipes.store', $product) }}" class="recipe-add-row" style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px;">
                                                     @csrf
-                                                    <select name="material_id" required style="flex: 2;">
+                                                    <select name="material_id" required style="width: 100%;">
                                                         <option value="">Select ingredient</option>
                                                         @foreach($rawMaterials as $mat)
-                                                            <option value="{{ $mat->id }}">{{ $mat->name }} ({{ $mat->unit }})</option>
+                                                            <option value="{{ $mat->id }}">{{ $mat->name }} (₱{{ number_format($mat->unit_cost, 2) }}/{{ $mat->unit }})</option>
                                                         @endforeach
                                                     </select>
-                                                    <input name="quantity_required" type="number" min="0.0001" step="0.0001" placeholder="Qty / unit" required style="flex: 1; min-width: 70px;">
-                                                    <button class="outline-btn" type="submit" style="padding: 5px 10px; font-size: 11px;">Add</button>
+                                                    <div style="display: flex; gap: 4px;">
+                                                        <input name="quantity_required" type="number" min="0.0001" step="0.0001" placeholder="Qty" required style="flex: 1;">
+                                                        <select name="unit" required style="flex: 1;">
+                                                            <option value="g">g (Grams)</option>
+                                                            <option value="kg">kg (Kilograms)</option>
+                                                            <option value="mL">mL (Milliliters)</option>
+                                                            <option value="L">L (Liters)</option>
+                                                            <option value="pcs">pcs (Pieces)</option>
+                                                        </select>
+                                                        <select name="conversion_factor" required style="flex: 1;" title="Unit conversion multiplier relative to purchase unit">
+                                                            <option value="0.001">0.001 (g/mL to kg/L)</option>
+                                                            <option value="1" selected>1.0 (Same Unit / pcs)</option>
+                                                        </select>
+                                                    </div>
+                                                    <button class="outline-btn" type="submit" style="padding: 5px 10px; font-size: 11px; align-self: flex-end;">Add Ingredient</button>
                                                 </form>
                                             </div>
                                         </details>
@@ -155,13 +194,12 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="{{ $isAdmin ? 10 : 9 }}">No products found. Click "+ Add Product" to create your first menu item.</td>
+                                    <td colspan="{{ $isAdmin ? 12 : 11 }}">No products found. Click "+ Add Product" to create your first menu item.</td>
                                 </tr>
                             @endforelse
                         </tbody>
                     </table>
                 </div>
-                {{-- Added Pagination Links --}}
                 <div style="padding: 16px;">
                     {{ $products->appends(request()->query())->links() }}
                 </div>
@@ -183,7 +221,7 @@
                 <div class="panel-header">
                     <div>
                         <h2>Ingredients & Raw Materials</h2>
-                        <small style="color: var(--muted);">Kitchen ingredients and packaging materials used in product recipes. Stock is replenished via Stock In or Purchases.</small>
+                        <small style="color: var(--muted);">Kitchen ingredients and purchase costs used to determine menu product COGS.</small>
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <a class="outline-btn" href="{{ route('stock-in') }}" style="font-size: 12px; padding: 7px 14px; text-decoration: none;">↓ Stock In</a>
@@ -196,6 +234,9 @@
                             <tr>
                                 <th>Material Code</th>
                                 <th>Ingredient Name</th>
+                                <th>Unit Cost</th>
+                                <th>Yield %</th>
+                                <th>Effective Cost</th>
                                 <th>Current Stock</th>
                                 <th>Minimum Stock</th>
                                 <th>Unit</th>
@@ -208,6 +249,9 @@
                                 <tr>
                                     <td><strong>{{ $material->material_code }}</strong></td>
                                     <td>{{ $material->name }}</td>
+                                    <td><strong>₱{{ number_format($material->unit_cost, 2) }}</strong> / {{ $material->unit }}</td>
+                                    <td>{{ number_format($material->yield_percent, 1) }}%</td>
+                                    <td style="color: var(--muted);">₱{{ number_format($material->effective_unit_cost, 2) }}</td>
                                     <td><strong>{{ number_format($material->current_stock, 2) }}</strong></td>
                                     <td>{{ number_format($material->minimum_stock, 2) }}</td>
                                     <td>{{ $material->unit }}</td>
@@ -234,7 +278,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7">No ingredients found. Click "+ Add Ingredient" to register kitchen raw materials.</td>
+                                    <td colspan="10">No ingredients found. Click "+ Add Ingredient" to register kitchen raw materials.</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -329,6 +373,12 @@
                     <label>Ingredient Name
                         <input name="name" placeholder="e.g. Chicken Breast, Cooking Oil" value="{{ old('name') }}" required>
                     </label>
+                    <label>Unit Cost (₱)
+                        <input name="unit_cost" type="number" min="0" step="0.0001" placeholder="e.g. 180.00" value="{{ old('unit_cost', 0) }}" required>
+                    </label>
+                    <label>Usable Yield (%)
+                        <input name="yield_percent" type="number" min="1" max="100" step="0.01" placeholder="e.g. 90 for 90%" value="{{ old('yield_percent', 100) }}" required>
+                    </label>
                     <label>Unit of Measurement
                         <select name="unit" required>
                             <option value="kg" @selected(old('unit') === 'kg')>kg (Kilograms)</option>
@@ -416,6 +466,8 @@
                         <div class="form-grid">
                             <label>Material Code<input name="material_code" value="{{ $material->material_code }}" required></label>
                             <label>Ingredient Name<input name="name" value="{{ $material->name }}" required></label>
+                            <label>Unit Cost (₱)<input name="unit_cost" type="number" min="0" step="0.0001" value="{{ $material->unit_cost }}" required></label>
+                            <label>Usable Yield (%)<input name="yield_percent" type="number" min="1" max="100" step="0.01" value="{{ $material->yield_percent }}" required></label>
                             <label>Unit
                                 <select name="unit" required>
                                     <option value="kg" @selected($material->unit === 'kg')>kg (Kilograms)</option>

@@ -18,16 +18,16 @@
             $items = [
                 ['route' => 'dashboard', 'label' => 'Dashboard', 'icon' => '▦', 'admin_only' => false],
                 ['route' => 'products', 'label' => 'Products / Inventory', 'icon' => '□', 'admin_only' => false],
-                ['route' => 'stock-in', 'label' => 'Stock In', 'icon' => '↓', 'admin_only' => false],
+                ['route' => 'expenses', 'label' => 'Supply Expenses', 'icon' => '₱', 'admin_only' => false],
                 ['route' => 'inventory-transactions', 'label' => 'Inventory Transactions', 'icon' => '⇄', 'admin_only' => false],
                 ['route' => 'suppliers', 'label' => 'Suppliers', 'icon' => '♙', 'admin_only' => false],
                 ['route' => 'reports', 'label' => 'Reports', 'icon' => '▥', 'admin_only' => false],
                 ['route' => 'users', 'label' => 'Users', 'icon' => '♙', 'admin_only' => true],
                 ['route' => 'settings', 'label' => 'Settings', 'icon' => '⚙', 'admin_only' => true],
                 ['route' => 'purchase-orders', 'label' => 'Purchase Orders', 'icon' => '▤', 'admin_only' => false],
-                ['route' => 'purchases', 'label' => 'Purchases', 'icon' => '↓', 'admin_only' => false],
                 ['route' => 'sales', 'label' => 'Manual / Backup Sale', 'icon' => '▣', 'admin_only' => true],
-                ['route' => 'expenses', 'label' => 'Expenses', 'icon' => '₱', 'admin_only' => false],
+                ['route' => 'stock-in', 'label' => 'Stock In', 'icon' => '↓', 'admin_only' => false],
+                
             ];
         @endphp
 

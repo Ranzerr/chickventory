@@ -16,7 +16,7 @@
                 <div>
                     <span>Total Products</span>
                     <strong>{{ $productCount }}</strong>
-                    <small>All active products</small>
+                    <small>All active menu items</small>
                 </div>
             </div>
             <div class="summary-card">
@@ -36,11 +36,11 @@
                 </div>
             </div>
             <div class="summary-card">
-                <div class="summary-icon">♙</div>
+                <div class="summary-icon">💰</div>
                 <div>
-                    <span>Suppliers</span>
-                    <strong>{{ $supplierCount }}</strong>
-                    <small>Active suppliers</small>
+                    <span>Gross Sales Revenue</span>
+                    <strong style="color: #2e7d32;">₱{{ number_format($totalRevenueToday ?? 0, 2) }}</strong>
+                    <small>Processed today</small>
                 </div>
             </div>
         </div>
@@ -50,7 +50,7 @@
             <div class="simple-flow">
                 <span>🛒 ORDERING SYSTEM<br><small>Order Completed</small></span>
                 <b>→</b>
-                <span>🔗 INTEGRATION<br><small>Order Data</small></span>
+                <span>🔗 INTEGRATION<br><small>Order Data & COGS Snapshot</small></span>
                 <b>→</b>
                 <span>🐔 INVENTORY SYSTEM<br><small>Automatic Deduction</small></span>
             </div>
@@ -61,6 +61,7 @@
         </div>
 
         <div class="dashboard-grid">
+            {{-- Panel 1: Recent Inventory Transactions --}}
             <div class="panel">
                 <div class="panel-header">
                     <h2>Recent Inventory Transactions</h2>
@@ -81,18 +82,12 @@
                         <tbody>
                             @forelse ($recentTransactions as $transaction)
                                 @php
-                                    // Cast array/object safely
                                     $tx = (object) $transaction;
-                                    
-                                    // Resolve reference or transaction code fallback
                                     $reference = !empty($tx->reference) ? $tx->reference : ($tx->transaction_code ?? '-');
-                                    
-                                    // Resolve product object or fallback array attributes
                                     $product = is_object($tx->product ?? null) ? $tx->product : null;
                                     $productName = $product->name ?? ($tx->product_name ?? 'N/A');
                                     $productUnit = $product->unit ?? ($tx->product_unit ?? 'pcs');
                                     
-                                    // Safe date parsing for strings or Carbon instances
                                     $occurredAt = is_string($tx->occurred_at ?? null) 
                                         ? \Illuminate\Support\Carbon::parse($tx->occurred_at) 
                                         : ($tx->occurred_at ?? null);
@@ -121,25 +116,60 @@
                 </div>
             </div>
 
+            {{-- Panel 2: Alerts (Low Stock & Low Margin Warnings) --}}
             <div class="panel">
                 <div class="panel-header">
                     <h2>Low Stock Alert</h2>
-                    <a href="{{ route('products') }}">View Inventory</a>
+                    <a href="{{ route('products', ['tab' => 'ingredients']) }}">View Inventory</a>
                 </div>
-                @forelse ($lowStockMaterials as $material)
-                    <div class="alert">
-                        <div class="alert-icon">!</div>
-                        <div>
-                            <strong>{{ $material->name }}</strong>
-                            <p>
-                                Current: {{ number_format($material->current_stock, 2) }} {{ $material->unit }} | 
-                                Minimum: {{ number_format($material->minimum_stock, 2) }} {{ $material->unit }}
-                            </p>
-                        </div>
+                                                @forelse ($lowStockMaterials as $material)
+                                <div class="alert" style="margin-bottom: 8px;">
+                                    <div class="alert-icon">!</div>
+                                    <div style="flex: 1;">
+                                        @if(is_array($material))
+                                            <strong>{{ $material['name'] ?? 'Raw Material Alert' }}</strong>
+                                            <p>
+                                                Current: {{ number_format($material['current_stock'] ?? 0, 2) }} {{ $material['unit'] ?? '' }} | 
+                                                Minimum: {{ number_format($material['minimum_stock'] ?? 0, 2) }} {{ $material['unit'] ?? '' }}
+                                            </p>
+                                        @elseif(is_object($material))
+                                            <strong>{{ $material->name ?? 'Raw Material Alert' }}</strong>
+                                            <p>
+                                                Current: {{ number_format($material->current_stock ?? 0, 2) }} {{ $material->unit ?? '' }} | 
+                                                Minimum: {{ number_format($material->minimum_stock ?? 0, 2) }} {{ $material->unit ?? '' }}
+                                            </p>
+                                        @else
+                                            <strong>{{ $material }}</strong>
+                                        @endif
+                                    </div>
+                                    @if(is_array($material) && !empty($material['id']))
+                                        <a class="outline-btn" href="{{ route('stock-in', ['material_id' => $material['id']]) }}" style="font-size: 10px; padding: 3px 8px; text-decoration: none;">+ Stock In</a>
+                                    @elseif(is_object($material) && !empty($material->id))
+                                        <a class="outline-btn" href="{{ route('stock-in', ['material_id' => $material->id]) }}" style="font-size: 10px; padding: 3px 8px; text-decoration: none;">+ Stock In</a>
+                                    @endif
+                                </div>
+                            @empty
+                                <p style="font-size: 13px; color: var(--muted);">All raw materials are above their minimum stock level.</p>
+                            @endforelse
+                @if(isset($lowMarginProducts) && $lowMarginProducts->isNotEmpty())
+                    <div class="panel-header" style="margin-top: 24px;">
+                        <h2 style="color: #d32f2f;">Low Margin Alert (< 30%)</h2>
+                        <a href="{{ route('products') }}">Adjust Recipe</a>
                     </div>
-                @empty
-                    <p>All raw materials are above their minimum stock level.</p>
-                @endforelse
+                    @foreach($lowMarginProducts as $prod)
+                        <div class="alert" style="border-left: 4px solid #d32f2f; background: #fff5f5; margin-bottom: 8px;">
+                            <div class="alert-icon" style="color: #d32f2f;">⚠️</div>
+                            <div>
+                                <strong>{{ $prod->name }}</strong>
+                                <p>
+                                    Price: ₱{{ number_format($prod->price, 2) }} | 
+                                    COGS: ₱{{ number_format($prod->cost_to_produce, 2) }} | 
+                                    Margin: <span style="color: #d32f2f; font-weight: bold;">{{ number_format($prod->profit_margin_percentage, 1) }}%</span>
+                                </p>
+                            </div>
+                        </div>
+                    @endforeach
+                @endif
             </div>
         </div>
 
@@ -155,19 +185,19 @@
                 <div>
                     <div class="process-icon">🔗</div>
                     <strong>2. Data Sent</strong>
-                    <small>Order data reaches inventory</small>
+                    <small>Order data & live COGS sent</small>
                 </div>
                 <div class="arrow">→</div>
                 <div>
                     <div class="process-icon">▦</div>
                     <strong>3. Stock Deducted</strong>
-                    <small>Inventory updates automatically</small>
+                    <small>Raw materials deducted automatically</small>
                 </div>
                 <div class="arrow">→</div>
                 <div>
                     <div class="process-icon">!</div>
                     <strong>4. Alert Triggered</strong>
-                    <small>Low stock items are flagged</small>
+                    <small>Low stock or thin margins flagged</small>
                 </div>
             </div>
         </div>
